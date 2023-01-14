@@ -1,4 +1,4 @@
-package main
+package search
 
 import (
 	"encoding/json"
@@ -7,11 +7,6 @@ import (
 	"os"
 	"strings"
 )
-
-func printJsonFromStruct(data any) {
-	s, _ := json.MarshalIndent(data, "", "\t")
-	fmt.Println(string(s))
-}
 
 type Comic struct {
 	Num        int    `json:"num"`
@@ -37,18 +32,7 @@ func (c *Comic) String() {
 	fmt.Println("}")
 }
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Pls Pass The File Name")
-		os.Exit(-1)
-	}
-	
-	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "Pls Provide Search Term")
-		os.Exit(-1)
-	}
-	
-	fileName := os.Args[1]
+func Search(fileName string, inputSearchTerms []string) {
 	
 	var (
 		comics      []Comic
@@ -68,7 +52,7 @@ func main() {
 		os.Exit(-1)
 	}
 	
-	for _, term := range os.Args[2:] {
+	for _, term := range inputSearchTerms {
 		searchTerms = append(searchTerms, strings.ToLower(term))
 	}
 
@@ -78,7 +62,7 @@ outer:
 		transcript := strings.ToLower(comic.Transcript)
 		
 		for _, term := range searchTerms {
-			if !strings.Contains(title, term) && !strings.Contains(transcript, term) {
+			if !strings.Contains(title, term) || !strings.Contains(transcript, term) {
 				continue outer
 			}
 		}

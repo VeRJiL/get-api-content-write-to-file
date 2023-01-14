@@ -1,4 +1,4 @@
-package main
+package concurrent
 
 import (
 	"fmt"
@@ -14,23 +14,25 @@ type response struct {
 	error error
 }
 
-func getOneConcurrently(c chan response, wg *sync.WaitGroup, counter int) {
-	defer wg.Done()
+func getOne(c chan response, counter int) {
 	url := fmt.Sprintf("https://xkcd.com/%d/info.0.json", counter)
 	res, err := http.Get(url)
 	
 	if err != nil {
 		c <- response{data: nil, error: fmt.Errorf("cant get to the webpage")}
+		return
 	}
 	
 	if res.StatusCode != http.StatusOK {
 		c <- response{data: nil, error: fmt.Errorf("Skipping Commic : %d, Got: %d\n", counter, res.StatusCode)}
+		return
 	}
 	
 	body, err := io.ReadAll(res.Body)
 	
 	if err != nil {
 		c <- response{data: nil, error: fmt.Errorf("Invalid Body: %d\n", err)}
+		return
 	}
 	
 	res.Body.Close()
@@ -38,16 +40,28 @@ func getOneConcurrently(c chan response, wg *sync.WaitGroup, counter int) {
 	c <- response{data: body, error: nil}
 }
 
-func main() {
+func write(f *os.File, data chan response, counter int) {
+	response := <-data
+	
+	if response.error != nil {
+		fmt.Printf("failed: #%d\n", counter)
+		return
+	}
+	
+	if counter > 1 {
+		f.WriteString(",\n")
+	}
+	
+	f.Write(response.data)
+}
+
+func GetData(iteration int) {
 	start := time.Now()
 	
-	var fails, counter int
-	var data = make(chan response)
-	var loopScape = make(chan bool)
-	var loopBreak = make(chan bool)
+	data := make(chan response, 32)
 	wg := sync.WaitGroup{}
 	
-	f, err := os.Create("xkcd.json")
+	f, err := os.Create("./outputs/concurrent.json")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Can't Create the file")
 	}
@@ -56,51 +70,19 @@ func main() {
 	
 	f.WriteString("[\n")
 	
-	for i := 1; fails < 2; i++ {
-		
+	for i := 1; i <= iteration; i++ {
 		wg.Add(1)
-		go getOneConcurrently(data, &wg, i)
-		
-		wg.Add(1)
-		go func() {
+		go func(counter int) {
 			defer wg.Done()
-			
-			response := <-data
-			
-			if response.error == nil {
-				fails++
-				loopScape <- false
-			}
-			
-			if counter > 0 {
-				f.WriteString(",\n")
-			}
-			
-			if counter == 100 {
-				loopScape <- false
-			}
-			
-			f.Write(response.data)
-			
-			counter++
-			fails = 0
-			fmt.Printf("Read comic number: %d\n\n", i)
-		}()
-		
-		if !<-loopScape {
-			continue
-		}
-		
-		if !<-loopBreak {
-			break
-		}
+			getOne(data, counter)
+			write(f, data, counter)
+		}(i)
 	}
-	
-	f.WriteString("\n]")
 	
 	wg.Wait()
 	
+	f.WriteString("\n]")
+	
 	secs := time.Since(start).Seconds()
-	fmt.Printf("Read Total Number Of %d Comics\n", counter)
-	fmt.Printf("It tool: %v seconds", secs)
+	fmt.Printf("It tool: %.2v seconds | %.2v mins\n", secs, secs/60)
 }
